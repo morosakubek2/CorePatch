@@ -3,7 +3,7 @@ SRC_DIR := src
 OBJ_FILE := $(KPM_NAME).o
 KPM_FILE := $(KPM_NAME).kpm
 
-# Ścieżka do źródeł KernelPatch (ustawiana z workflow)
+# Ścieżka do źródeł KernelPatch (przekazywana z workflow)
 KP_ROOT ?= $(PWD)/kernel_patch_src
 KP_TOOLS := $(KP_ROOT)/tools
 
@@ -23,7 +23,7 @@ endif
 
 CC := $(CROSS_COMPILE)gcc
 
-# Flagi zgodne z demo-syscallhook
+# Flagi kompilacji zgodne z demo KernelPatch
 CFLAGS := -Wall -Wextra -O2 -fno-pic -fno-pie -fno-strict-aliasing
 CFLAGS += -I$(KP_ROOT)/kernel/include
 CFLAGS += -I$(KP_ROOT)/kernel/arch/$(KP_ARCH)/include
@@ -37,9 +37,9 @@ $(OBJ_FILE): $(SRC_DIR)/corepatch.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(KPM_FILE): $(OBJ_FILE)
-	@echo "Packaging $(OBJ_FILE) into $(KPM_FILE) using kpbuild..."
+	@echo "Packaging $(OBJ_FILE) into $(KPM_FILE)..."
 	@if [ ! -f "$(KP_TOOLS)/kpbuild" ]; then \
-		echo "Error: kpbuild not found! Did you build the tools first?"; \
+		echo "Error: kpbuild not found in $(KP_TOOLS)!"; \
 		exit 1; \
 	fi
 	$(KP_TOOLS)/kpbuild $(OBJ_FILE) -o $(KPM_FILE)
@@ -47,7 +47,5 @@ $(KPM_FILE): $(OBJ_FILE)
 
 clean:
 	rm -f $(OBJ_FILE) $(KPM_FILE)
-	# Nie usuwamy kernel_patch_src tutaj, aby nie pobierać go ponownie przy kolejnych krokach w CI,
-	# chyba że wywołujemy make clean ręcznie lokalnie.
 
 .PHONY: all clean
