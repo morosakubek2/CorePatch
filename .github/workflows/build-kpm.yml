@@ -1,0 +1,118 @@
+name: Build KPM CorePatch
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'kpm_patch/**'
+  pull_request:
+    paths:
+      - 'kpm_patch/**'
+  workflow_dispatch:
+
+jobs:
+  build-kpm:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [arm64, arm, x86_64]
+        include:
+          - arch: arm64
+            cross_compile: aarch64-linux-gnu-
+          - arch: arm
+            cross_compile: arm-linux-gnueabi-
+          - arch: x86_64
+            cross_compile: x86_64-linux-gnu-
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          libelf-dev \
+          libz-dev \
+          libssl-dev \
+          binutils \
+          gcc \
+          make \
+          git \
+          wget \
+          curl \
+          xz-utils \
+          clang \
+          llvm \
+          flex \
+          bison \
+          pahole
+
+    - name: Setup cross-compilation for ${{ matrix.arch }}
+      if: matrix.arch != 'x86_64'
+      run: |
+        sudo apt-get install -y \
+          gcc-${{ matrix.cross_compile }} \
+          binutils-${{ matrix.cross_compile }}
+
+    - name: Download KernelSU headers
+      run: |
+        mkdir -p kpm_patch/ksu
+        cd kpm_patch/ksu
+        wget -q https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/ksu.h
+        wget -q https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/ksud.h
+        wget -q https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/sucompat.c
+        echo "KernelSU headers downloaded"
+
+    - name: Build KPM for ${{ matrix.arch }}
+      run: |
+        cd kpm_patch
+        chmod +x build.sh
+        ./build.sh -a ${{ matrix.arch }} -k ksu
+        
+    - name: Verify build output
+      run: |
+        cd kpm_patch
+        ls -lh build/
+        if [ -f "build/corepatch_${{ matrix.arch }}.kpm" ]; then
+          echo "✓ KPM module built successfully for ${{ matrix.arch }}"
+          file build/corepatch_${{ matrix.arch }}.kpm
+        else
+          echo "✗ KPM module not found for ${{ matrix.arch }}"
+          exit 1
+        fi
+
+    - name: Upload KPM artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: corepatch-kpm-${{ matrix.arch }}
+        path: kpm_patch/build/corepatch_${{ matrix.arch }}.kpm
+        retention-days: 30
+
+  release:
+    needs: build-kpm
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        pattern: corepatch-kpm-*
+        merge-multiple: true
+        path: ./release
+
+    - name: Create release archive
+      run: |
+        cd release
+        zip -r ../corepatch-kpm-all.zip *.kpm
+        echo "Created release archive"
+        ls -lh
+
+    - name: Upload release archive
+      uses: actions/upload-artifact@v4
+      with:
+        name: corepatch-kpm-all-architectures
+        path: corepatch-kpm-all.zip
+        retention-days: 30
