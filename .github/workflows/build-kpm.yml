@@ -29,102 +29,100 @@ jobs:
           wget \
           curl \
           make \
+          cmake \
+          libssl-dev \
+          zlib1g-dev \
           python3
 
-    - name: Setup KernelPatch Sources & Download Tools
+    - name: Setup KernelPatch Sources & Build Tools
       run: |
         cd kpm_patch
-        echo "Cloning KernelPatch sources (for headers)...")
+        echo "Cloning KernelPatch sources..."
         git clone --depth 1 https://github.com/bmax121/KernelPatch.git kernel_patch_src
         
-        echo "Downloading pre-built kpbuild tool..."
-        # Pobieramy gotowe narzędzie z oficjalnego repozytorium
-        # Ścieżka do binary może się zmienić, sprawdzamy dostępne assety lub budujemy najprostszą wersję
-        # Alternatywa: Budujemy tylko absolutne minimum potrzebne do kpbuild
-        
-        # METODA HYBRYDOWA: Tworzymy minimalny preset.h tylko z typami, żeby kompilacja przeszła
         cd kernel_patch_src/tools
         
-        # Generujemy pełniejszy preset.h na podstawie analizy źródła
-        cat > preset.h << 'EOF'
-#ifndef _PRESET_H
-#define _PRESET_H
+        echo "Generating comprehensive preset.h..."
+        # Tworzymy plik linia po linii, aby uniknąć problemów z heredoc w YAML
+        echo '#ifndef _PRESET_H' > preset.h
+        echo '#define _PRESET_H' >> preset.h
+        echo '' >> preset.h
+        echo '#include <stdint.h>' >> preset.h
+        echo '#include <stdbool.h>' >> preset.h
+        echo '' >> preset.h
+        echo '// Basic types required by tools' >> preset.h
+        echo 'typedef struct {' >> preset.h
+        echo '    const char *banner;' >> preset.h
+        echo '    const char *kallsyms;' >> preset.h
+        echo '    const char *boot_img;' >> preset.h
+        echo '    const char *patch_img;' >> preset.h
+        echo '    const char *out_img;' >> preset.h
+        echo '    const char *kpm_dir;' >> preset.h
+        echo '    uint64_t kp_base;' >> preset.h
+        echo '    uint64_t super_call;' >> preset.h
+        echo '    uint64_t super_cmd;' >> preset.h
+        echo '    int init_rc_patch;' >> preset.h
+        echo '    int selinux_policy_patch;' >> preset.h
+        echo '    int overlayfs_mount;' >> preset.h
+        echo '    int sudoers_add;' >> preset.h
+        echo '    const char *su_path;' >> preset.h
+        echo '    const char *magiskboot;' >> preset.h
+        echo '    const char *dtc;' >> preset.h
+        echo '} preset_t;' >> preset.h
+        echo '' >> preset.h
+        echo 'typedef enum {' >> preset.h
+        echo '    EXTRA_TYPE_NONE = 0,' >> preset.h
+        echo '    EXTRA_TYPE_KPM,' >> preset.h
+        echo '    EXTRA_TYPE_PATCH,' >> preset.h
+        echo '    EXTRA_TYPE_MAX' >> preset.h
+        echo '} extra_item_type;' >> preset.h
+        echo '' >> preset.h
+        echo 'typedef struct patch_extra_item {' >> preset.h
+        echo '    extra_item_type type;' >> preset.h
+        echo '    char *path;' >> preset.h
+        echo '    void *data;' >> preset.h
+        echo '    uint32_t size;' >> preset.h
+        echo '    uint32_t offset;' >> preset.h
+        echo '    uint32_t flags;' >> preset.h
+        echo '    struct patch_extra_item *next;' >> preset.h
+        echo '} patch_extra_item_t;' >> preset.h
+        echo '' >> preset.h
+        echo '// Default values' >> preset.h
+        echo '#define DEFAULT_BANNER "Linux version"' >> preset.h
+        echo '#define DEFAULT_KALLSYMS "/proc/kallsyms"' >> preset.h
+        echo '#define DEFAULT_BOOT_IMG "boot.img"' >> preset.h
+        echo '#define DEFAULT_PATCH_IMG "patch.img"' >> preset.h
+        echo '#define DEFAULT_OUT_IMG "out.img"' >> preset.h
+        echo '#define DEFAULT_KPM_DIR "."' >> preset.h
+        echo '#define DEFAULT_KP_BASE 0' >> preset.h
+        echo '#define DEFAULT_SUPER_CALL 0' >> preset.h
+        echo '#define DEFAULT_SUPER_CMD 0' >> preset.h
+        echo '#define DEFAULT_INIT_RC_PATCH 1' >> preset.h
+        echo '#define DEFAULT_SELINUX_POLICY_PATCH 1' >> preset.h
+        echo '#define DEFAULT_OVERLAYFS_MOUNT 1' >> preset.h
+        echo '#define DEFAULT_SUDOERS_ADD 1' >> preset.h
+        echo '#define DEFAULT_SU_PATH "/system/bin/su"' >> preset.h
+        echo '#define DEFAULT_MAGISKBOOT ""' >> preset.h
+        echo '#define DEFAULT_DTC ""' >> preset.h
+        echo '' >> preset.h
+        echo '#endif /* _PRESET_H */' >> preset.h
+        
+        echo "preset.h created successfully."
+        cat preset.h # Debug: wyświetl zawartość
 
-#include <stdint.h>
-#include <stdbool.h>
-
-// Basic types required by tools
-typedef struct {
-    const char *banner;
-    const char *kallsyms;
-    const char *boot_img;
-    const char *patch_img;
-    const char *out_img;
-    const char *kpm_dir;
-    uint64_t kp_base;
-    uint64_t super_call;
-    uint64_t super_cmd;
-    int init_rc_patch;
-    int selinux_policy_patch;
-    int overlayfs_mount;
-    int sudoers_add;
-    const char *su_path;
-    const char *magiskboot;
-    const char *dtc;
-} preset_t;
-
-typedef enum {
-    EXTRA_TYPE_NONE = 0,
-    EXTRA_TYPE_KPM,
-    EXTRA_TYPE_PATCH,
-    EXTRA_TYPE_MAX
-} extra_item_type;
-
-typedef struct patch_extra_item {
-    extra_item_type type;
-    char *path;
-    void *data;
-    uint32_t size;
-    uint32_t offset;
-    uint32_t flags;
-    struct patch_extra_item *next;
-} patch_extra_item_t;
-
-// Default values
-#define DEFAULT_BANNER "Linux version"
-#define DEFAULT_KALLSYMS "/proc/kallsyms"
-#define DEFAULT_BOOT_IMG "boot.img"
-#define DEFAULT_PATCH_IMG "patch.img"
-#define DEFAULT_OUT_IMG "out.img"
-#define DEFAULT_KPM_DIR "."
-#define DEFAULT_KP_BASE 0
-#define DEFAULT_SUPER_CALL 0
-#define DEFAULT_SUPER_CMD 0
-#define DEFAULT_INIT_RC_PATCH 1
-#define DEFAULT_SELINUX_POLICY_PATCH 1
-#define DEFAULT_OVERLAYFS_MOUNT 1
-#define DEFAULT_SUDOERS_ADD 1
-#define DEFAULT_SU_PATH "/system/bin/su"
-#define DEFAULT_MAGISKBOOT ""
-#define DEFAULT_DTC ""
-
-#endif /* _PRESET_H */
-EOF
-        echo "preset.h created."
-
-        echo "Building kpbuild tool..."
+        echo "Building kpbuild tool with CMake..."
         cmake -S . -B build
         cmake --build build -j$(nproc)
         
         if [ ! -f "build/kpbuild" ]; then
-          echo "Error: kpbuild not found!"
+          echo "Error: kpbuild not found after build!"
           ls -R build/ || true
           exit 1
         fi
         
         cp build/kpbuild ./kpbuild
         chmod +x ./kpbuild
-        echo "kpbuild ready."
+        echo "kpbuild ready at $(pwd)/kpbuild"
       shell: bash
 
     - name: Build KPM Module
