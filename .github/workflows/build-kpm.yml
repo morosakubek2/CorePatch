@@ -10,9 +10,6 @@ on:
 jobs:
   build-kpm:
     runs-on: ubuntu-24.04
-    strategy:
-      matrix:
-        arch: [arm64]
 
     steps:
     - name: Checkout repository
@@ -23,87 +20,96 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y \
           build-essential \
-          gcc-aarch64-linux-gnu \
-          binutils-aarch64-linux-gnu \
+          libelf-dev \
+          libz-dev \
+          libssl-dev \
+          binutils \
+          gcc \
+          make \
+          git \
           wget \
+          curl \
           xz-utils \
-          git
+          clang \
+          llvm \
+          flex \
+          bison \
+          pahole \
+          gcc-aarch64-linux-gnu \
+          binutils-aarch64-linux-gnu
 
-    - name: Setup KernelPatch Environment
+    - name: Clone KernelPatch (for kpbuild and headers)
       run: |
-        # Pobranie najnowszej wersji KernelPatch
-        git clone --depth=1 https://github.com/bmax121/KernelPatch.git kp_src
+        cd ..
+        git clone --depth 1 https://github.com/bmax121/KernelPatch.git
+        echo "KP_ROOT=$(pwd)/KernelPatch" >> $GITHUB_ENV
+
+    - name: Build kpbuild tool
+      run: |
+        cd ${{ env.KP_ROOT }}/tools/kpbuild
+        make
+        echo "KPBUILD=$(pwd)/kpbuild" >> $GITHUB_ENV
+
+    - name: Prepare KPM Source
+      run: |
+        # Kopiujemy nasz kod do struktury podobnej jak w demo
+        mkdir -p kpm_build
+        cp kpm_patch/src/corepatch.c kpm_build/
         
-        # Skopiowanie nagłówków potrzebnych do kompilacji (linux/*.h)
-        mkdir -p kpm_patch/kernel_headers
-        cp -r kp_src/linux/include kpm_patch/kernel_headers/include
+        # Kopiujemy niezbędne nagłówki z KernelPatch
+        # Demo syscallhook używa nagłówków z kernela, które są dostępne w drzewie KP
+        # Dla uproszczenia zakładamy, że kod używa tylko kpm.h i standardowych nagłówków kernela
+        # które kpbuild potrafi obsłużyć lub są w systemie cross-compile
         
-        # Pobranie lub skompilowanie narzędzia kpbuild
-        # W repozytorium KP jest ono w tools/, często wymaga prostego make
-        cd kp_src/tools
-        make || echo "Build tool might need adjustments, trying prebuilt..."
-        # Jeśli make nie zadziała, sprawdzamy czy nie ma gotowego binaria lub budujemy prościej
-        # Dla pewności skompilujemy kpbuild jeśli jest źródło
-        if [ ! -f "kpbuild" ]; then
-             # Alternatywa: często kpbuild to prosty skrypt lub binary
-             # Sprawdzamy strukturę tools
-             ls -la
-        fi
-        cd ../..
-        
-        # Przeniesienie narzędzia do folderu roboczego
-        mkdir -p kpm_patch/tools
-        if [ -f "kp_src/tools/kpbuild" ]; then
-            cp kp_src/tools/kpbuild kpm_patch/tools/
-        else
-            # Fallback: jeśli kpbuild nie został zbudowany, spróbujmy znaleźć prebuilt lub zbudować inaczej
-            # W wielu przypadkach KP udostępnia kpbuild jako binary w release lub trzeba go zbudować z rust/c
-            # Na razie zakładamy sukces budowy tools lub używamy alternatywnej metody linkowania ręcznego jeśli kpbuild zawiedzie
-            echo "Warning: kpbuild not found, will attempt manual packaging if needed."
-        fi
+        # Tworzymy prosty Makefile lokalny wywołujący kpbuild
+        cat > kpm_build/Makefile << 'EOF'
+ARCH ?= arm64
+KPBUILD ?= ../../KernelPatch/tools/kpbuild/kpbuild
+SRC := corepatch.c
+OBJ := $(SRC:.c=.o)
+KPM := $(SRC:.c=.kpm)
+
+# Flagi zgodne z demo-syscallhook
+CFLAGS := -Wall -Wextra -O2 -fno-pic -fno-pie -D__KERNEL__
+CFLAGS += -I${{ env.KP_ROOT }}/kernel/include
+CFLAGS += -I${{ env.KP_ROOT }}/kpms/common
+
+ifeq ($(ARCH),arm64)
+    CROSS_COMPILE := aarch64-linux-gnu-
+else
+    $(error Only arm64 supported in this workflow)
+endif
+
+all: $(KPM)
+
+$(OBJ): $(SRC)
+	$(CROSS_COMPILE)gcc $(CFLAGS) -c $< -o $@
+
+$(KPM): $(OBJ)
+	$(KPBUILD) $< -o $@
+
+clean:
+	rm -f $(OBJ) $(KPM)
+
+.PHONY: all clean
+EOF
 
     - name: Build KPM Module
       run: |
-        cd kpm_patch
+        cd kpm_build
+        make ARCH=arm64 KPBUILD=${{ env.KPBUILD }}
         
-        # Ustawienie zmiennych
-        ARCH_CROSS=aarch64-linux-gnu-
-        KERNEL_HEADERS=$(pwd)/kernel_headers
-        
-        echo "Compiling corepatch.c..."
-        
-        # Kompilacja zgodna z demo-syscallhook
-        # -D__KERNEL__ -DMODULE są kluczowe
-        # -I... wskazuje na pobrane nagłówki linux
-        ${ARCH_CROSS}gcc -c src/corepatch.c \
-          -o build/corepatch.o \
-          -D__KERNEL__ -DMODULE \
-          -D__aarch64__ \
-          -Wall -Wextra -O2 \
-          -fno-pic -fno-pie \
-          -I${KERNEL_HEADERS}/include \
-          -I${KERNEL_HEADERS}/include/generated \
-          -nostdinc \
-          -isystem $(dirname $(${ARCH_CROSS}gcc -print-file-name=include))
-          
-        echo "Object file created."
-        ls -lh build/
-        
-        # Pakowanie do .kpm za pomocą kpbuild
-        if [ -f "tools/kpbuild" ]; then
-            echo "Packing with kpbuild..."
-            ./tools/kpbuild pack build/corepatch.o build/corepatch.kpm
-        else
-            echo "kpbuild not found. Creating a raw KPM structure (fallback)..."
-            # Fallback: ręczne stworzenie prostego nagłówka jeśli kpbuild zawiedzie w CI
-            # To jest ostateczność, lepiej mieć działające kpbuild
-            cat build/corepatch.o > build/corepatch.kpm
-            echo "Warning: Fallback used. The resulting .kpm might lack proper KP headers without kpbuild."
+        if [ ! -f "corepatch.kpm" ]; then
+          echo "Error: Build failed, corepatch.kpm not found!"
+          ls -lh
+          exit 1
         fi
+        echo "Build successful!"
+        ls -lh
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: corepatch-kpm-${{ matrix.arch }}
-        path: kpm_patch/build/corepatch.kpm
+        name: corepatch-kpm-arm64
+        path: kpm_build/corepatch.kpm
         retention-days: 30
