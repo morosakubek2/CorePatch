@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-24.04
     strategy:
       matrix:
-        arch: [arm64] # Możesz dodać arm, x86_64 jeśli potrzebujesz
+        arch: [arm64]
 
     steps:
     - name: Checkout repository
@@ -31,33 +31,39 @@ jobs:
           make \
           cmake \
           libssl-dev \
-          zlib1g-dev \
-          python3
+          python3 \
+          zlib1g-dev
 
-    - name: Setup KernelPatch & Generate Presets
+    - name: Setup KernelPatch Sources & Build Tools
       run: |
         cd kpm_patch
         echo "Cloning KernelPatch..."
         git clone --depth 1 https://github.com/bmax121/KernelPatch.git kernel_patch_src
         
-        echo "Generating preset.h..."
         cd kernel_patch_src/tools
-        # To jest kluczowy krok, którego brakowało - generuje preset.h na podstawie szablonu
-        if [ -f preset.h.template ]; then
-            cp preset.h.template preset.h
-            echo "preset.h generated from template."
-        elif [ -f ../kernel/patch/include/kconfig.h ]; then
-            # Fallback: czasem preset.h musi być wygenerowany skryptem, ale w nowych wersjach często wystarczy kopiowanie
-            echo "No template found, checking for alternative generation methods..."
-            # W najnowszych wersjach KP często preset.h jest już w repo lub generowany przez make
-            make gen_preset || echo "Make gen_preset not available, trying manual creation..."
-        else
-            # Ręczne stworzenie minimalnego preset.h jeśli wszystko inne zawiedzie (rzadko potrzebne)
-            echo "Creating minimal preset.h..."
+        
+        # Generowanie brakującego pliku preset.h
+        echo "Generating preset.h..."
+        if [ ! -f "preset.h" ]; then
             cat > preset.h << 'EOF'
 #ifndef _PRESET_H
 #define _PRESET_H
-// Minimal preset for building tools
+#define DEFAULT_BANNER "Linux version"
+#define DEFAULT_KALLSYMS "/proc/kallsyms"
+#define DEFAULT_BOOT_IMG "boot.img"
+#define DEFAULT_PATCH_IMG "patch.img"
+#define DEFAULT_OUT_IMG "out.img"
+#define DEFAULT_KPM_DIR "."
+#define DEFAULT_KP_BASE 0
+#define DEFAULT_SUPER_CALL 0
+#define DEFAULT_SUPER_CMD 0
+#define DEFAULT_INIT_RC_PATCH 1
+#define DEFAULT_SELINUX_POLICY_PATCH 1
+#define DEFAULT_OVERLAYFS_MOUNT 1
+#define DEFAULT_SUDOERS_ADD 1
+#define DEFAULT_SU_PATH "/system/bin/su"
+#define DEFAULT_MAGISKBOOT ""
+#define DEFAULT_DTC ""
 #endif
 EOF
         fi
@@ -66,28 +72,31 @@ EOF
         cmake -S . -B build
         cmake --build build -j$(nproc)
         
+        # Weryfikacja czy narzędzie powstało
         if [ ! -f "build/kpbuild" ]; then
-            echo "Error: kpbuild not found!"
+            echo "Error: kpbuild not found after build!"
             ls -R build/
             exit 1
         fi
         
+        # Kopiowanie dla łatwiejszego wywołania w Makefile
         cp build/kpbuild ./kpbuild
         chmod +x ./kpbuild
-        echo "Tools built successfully."
+        echo "kpbuild ready at $(pwd)/kpbuild"
 
     - name: Build KPM Module
       run: |
         cd kpm_patch
-        export KP_ROOT=$(pwd)/kernel_patch_src
-        export PATH=$PATH:$KP_ROOT/tools
-        
         echo "Building CorePatch for ${{ matrix.arch }}..."
-        make ARCH=${{ matrix.arch }} KP_ROOT=$KP_ROOT clean
-        make ARCH=${{ matrix.arch }} KP_ROOT=$KP_ROOT
+        
+        export KP_TOOLS=$(pwd)/kernel_patch_src/tools
+        export PATH=$PATH:$KP_TOOLS
+        
+        make ARCH=${{ matrix.arch }} KP_ROOT=$(pwd)/kernel_patch_src clean
+        make ARCH=${{ matrix.arch }} KP_ROOT=$(pwd)/kernel_patch_src
         
         if [ ! -f "corepatch.kpm" ]; then
-            echo "Error: Build failed! corepatch.kpm not found."
+            echo "Error: Build failed, corepatch.kpm not found!"
             ls -lh
             exit 1
         fi
