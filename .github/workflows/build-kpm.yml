@@ -26,38 +26,49 @@ jobs:
           gcc-aarch64-linux-gnu \
           binutils-aarch64-linux-gnu \
           git \
-          wget \
-          curl \
           make \
-          python3
+          cmake \
+          zlib1g-dev \
+          liblz4-dev \
+          liblzma-dev
 
-    - name: Download KernelPatch Sources
+    - name: Download and Build KernelPatch Tools
       run: |
-        echo "Downloading KernelPatch sources for headers and tools..."
         cd kpm_patch
+        echo "Cloning KernelPatch..."
         git clone --depth 1 https://github.com/bmax121/KernelPatch.git kernel_patch_src
         
-        # Verify tools exist
-        if [ ! -f "kernel_patch_src/tools/kpbuild" ]; then
-          echo "Error: kpbuild not found in downloaded sources!"
-          ls -R kernel_patch_src
+        echo "Building kpbuild tool..."
+        cd kernel_patch_src/tools
+        make clean
+        make -j$(nproc)
+        
+        # Weryfikacja czy narzędzie powstało
+        if [ ! -f "kpbuild" ]; then
+          echo "Error: kpbuild compilation failed!"
+          ls -la
           exit 1
         fi
-        chmod +x kernel_patch_src/tools/kpbuild
-        echo "KernelPatch sources ready."
+        
+        chmod +x kpbuild
+        echo "kpbuild ready at: $(pwd)/kpbuild"
 
     - name: Build KPM Module
       run: |
         cd kpm_patch
-        echo "Building for architecture: ${{ matrix.arch }}"
-        make ARCH=${{ matrix.arch }} clean
-        make ARCH=${{ matrix.arch }}
+        KP_TOOLS=$(pwd)/kernel_patch_src/tools
         
-        # Verify output
+        echo "Building CorePatch for ${{ matrix.arch }}..."
+        make ARCH=${{ matrix.arch }} KP_TOOLS=$KP_TOOLS clean
+        make ARCH=${{ matrix.arch }} KP_TOOLS=$KP_TOOLS
+        
         if [ ! -f "corepatch.kpm" ]; then
           echo "Error: Build failed, corepatch.kpm not found!"
+          ls -lh
           exit 1
         fi
+        
+        echo "Build successful!"
         ls -lh corepatch.kpm
 
     - name: Upload Artifact
