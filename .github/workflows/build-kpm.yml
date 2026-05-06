@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-24.04
     strategy:
       matrix:
-        arch: [arm64]
+        arch: [arm64] # Możesz dodać arm, x86_64 jeśli potrzebujesz
 
     steps:
     - name: Checkout repository
@@ -31,29 +31,50 @@ jobs:
           make \
           cmake \
           libssl-dev \
-          python3 \
-          zlib1g-dev
+          zlib1g-dev \
+          python3
 
-    - name: Setup KernelPatch & Build Tools
+    - name: Setup KernelPatch & Generate Presets
       run: |
         cd kpm_patch
         echo "Cloning KernelPatch..."
         git clone --depth 1 https://github.com/bmax121/KernelPatch.git kernel_patch_src
         
-        echo "Building kpbuild tool..."
+        echo "Generating preset.h..."
         cd kernel_patch_src/tools
+        # To jest kluczowy krok, którego brakowało - generuje preset.h na podstawie szablonu
+        if [ -f preset.h.template ]; then
+            cp preset.h.template preset.h
+            echo "preset.h generated from template."
+        elif [ -f ../kernel/patch/include/kconfig.h ]; then
+            # Fallback: czasem preset.h musi być wygenerowany skryptem, ale w nowych wersjach często wystarczy kopiowanie
+            echo "No template found, checking for alternative generation methods..."
+            # W najnowszych wersjach KP często preset.h jest już w repo lub generowany przez make
+            make gen_preset || echo "Make gen_preset not available, trying manual creation..."
+        else
+            # Ręczne stworzenie minimalnego preset.h jeśli wszystko inne zawiedzie (rzadko potrzebne)
+            echo "Creating minimal preset.h..."
+            cat > preset.h << 'EOF'
+#ifndef _PRESET_H
+#define _PRESET_H
+// Minimal preset for building tools
+#endif
+EOF
+        fi
+        
+        echo "Building kpbuild tool..."
         cmake -S . -B build
         cmake --build build -j$(nproc)
         
         if [ ! -f "build/kpbuild" ]; then
-            echo "Error: kpbuild compilation failed!"
+            echo "Error: kpbuild not found!"
             ls -R build/
             exit 1
         fi
         
         cp build/kpbuild ./kpbuild
         chmod +x ./kpbuild
-        echo "kpbuild ready."
+        echo "Tools built successfully."
 
     - name: Build KPM Module
       run: |
