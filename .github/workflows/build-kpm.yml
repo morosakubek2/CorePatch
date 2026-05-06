@@ -35,8 +35,8 @@ jobs:
           zlib1g-dev
 
     - name: Setup KernelPatch Sources & Build Tools
+      working-directory: kpm_patch
       run: |
-        cd kpm_patch
         echo "Cloning KernelPatch..."
         git clone --depth 1 https://github.com/bmax121/KernelPatch.git kernel_patch_src
         
@@ -44,8 +44,7 @@ jobs:
         
         # Generowanie brakującego pliku preset.h
         echo "Generating preset.h..."
-        if [ ! -f "preset.h" ]; then
-            cat > preset.h << 'EOF'
+        cat > preset.h << 'EOF'
 #ifndef _PRESET_H
 #define _PRESET_H
 #define DEFAULT_BANNER "Linux version"
@@ -66,32 +65,28 @@ jobs:
 #define DEFAULT_DTC ""
 #endif
 EOF
-        fi
         
         echo "Building kpbuild tool..."
         cmake -S . -B build
         cmake --build build -j$(nproc)
         
-        # Weryfikacja czy narzędzie powstało
         if [ ! -f "build/kpbuild" ]; then
-            echo "Error: kpbuild not found after build!"
+            echo "Error: kpbuild not found!"
             ls -R build/
             exit 1
         fi
         
-        # Kopiowanie dla łatwiejszego wywołania w Makefile
         cp build/kpbuild ./kpbuild
         chmod +x ./kpbuild
-        echo "kpbuild ready at $(pwd)/kpbuild"
+        echo "kpbuild ready."
 
     - name: Build KPM Module
+      working-directory: kpm_patch
       run: |
-        cd kpm_patch
-        echo "Building CorePatch for ${{ matrix.arch }}..."
-        
         export KP_TOOLS=$(pwd)/kernel_patch_src/tools
         export PATH=$PATH:$KP_TOOLS
         
+        echo "Building CorePatch for ${{ matrix.arch }}..."
         make ARCH=${{ matrix.arch }} KP_ROOT=$(pwd)/kernel_patch_src clean
         make ARCH=${{ matrix.arch }} KP_ROOT=$(pwd)/kernel_patch_src
         
