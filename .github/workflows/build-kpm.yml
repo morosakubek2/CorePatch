@@ -26,13 +26,14 @@ jobs:
           gcc-aarch64-linux-gnu \
           binutils-aarch64-linux-gnu \
           git \
+          wget \
+          curl \
           make \
           cmake \
-          zlib1g-dev \
-          liblz4-dev \
-          liblzma-dev
+          libssl-dev \
+          python3
 
-    - name: Download and Build KernelPatch Tools
+    - name: Setup KernelPatch Sources & Build Tools
       run: |
         cd kpm_patch
         echo "Cloning KernelPatch..."
@@ -40,32 +41,37 @@ jobs:
         
         echo "Building kpbuild tool..."
         cd kernel_patch_src/tools
-        make clean
-        make -j$(nproc)
+        cmake -S . -B build
+        cmake --build build -j$(nproc)
         
-        # Weryfikacja czy narzędzie powstało
-        if [ ! -f "kpbuild" ]; then
-          echo "Error: kpbuild compilation failed!"
-          ls -la
-          exit 1
+        # Sprawdzenie czy narzędzie powstało
+        if [ ! -f "build/kpbuild" ]; then
+            echo "Error: kpbuild not found after build!"
+            ls -R build/
+            exit 1
         fi
         
-        chmod +x kpbuild
-        echo "kpbuild ready at: $(pwd)/kpbuild"
+        # Utworzenie linku symbolicznego lub kopiowanie dla łatwiejszego wywołania
+        cp build/kpbuild ./kpbuild
+        chmod +x ./kpbuild
+        echo "kpbuild ready at $(pwd)/kpbuild"
 
     - name: Build KPM Module
       run: |
         cd kpm_patch
-        KP_TOOLS=$(pwd)/kernel_patch_src/tools
-        
         echo "Building CorePatch for ${{ matrix.arch }}..."
-        make ARCH=${{ matrix.arch }} KP_TOOLS=$KP_TOOLS clean
-        make ARCH=${{ matrix.arch }} KP_TOOLS=$KP_TOOLS
+        
+        # Eksport ścieżki do narzędzi
+        export KP_TOOLS=$(pwd)/kernel_patch_src/tools
+        export PATH=$PATH:$KP_TOOLS
+        
+        make ARCH=${{ matrix.arch }} KP_ROOT=$(pwd)/kernel_patch_src clean
+        make ARCH=${{ matrix.arch }} KP_ROOT=$(pwd)/kernel_patch_src
         
         if [ ! -f "corepatch.kpm" ]; then
-          echo "Error: Build failed, corepatch.kpm not found!"
-          ls -lh
-          exit 1
+            echo "Error: Build failed, corepatch.kpm not found!"
+            ls -lh
+            exit 1
         fi
         
         echo "Build successful!"
