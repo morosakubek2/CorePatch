@@ -34,51 +34,57 @@ jobs:
           python3 \
           zlib1g-dev
 
-    - name: Setup KernelPatch Sources & Build Tools
-      working-directory: kpm_patch
+        - name: Setup KernelPatch Sources & Build Tools
       run: |
+        cd kpm_patch
         echo "Cloning KernelPatch..."
         git clone --depth 1 https://github.com/bmax121/KernelPatch.git kernel_patch_src
         
         cd kernel_patch_src/tools
         
-        # Generowanie brakującego pliku preset.h
-        echo "Generating preset.h..."
-        cat > preset.h << 'EOF'
-#ifndef _PRESET_H
-#define _PRESET_H
-#define DEFAULT_BANNER "Linux version"
-#define DEFAULT_KALLSYMS "/proc/kallsyms"
-#define DEFAULT_BOOT_IMG "boot.img"
-#define DEFAULT_PATCH_IMG "patch.img"
-#define DEFAULT_OUT_IMG "out.img"
-#define DEFAULT_KPM_DIR "."
-#define DEFAULT_KP_BASE 0
-#define DEFAULT_SUPER_CALL 0
-#define DEFAULT_SUPER_CMD 0
-#define DEFAULT_INIT_RC_PATCH 1
-#define DEFAULT_SELINUX_POLICY_PATCH 1
-#define DEFAULT_OVERLAYFS_MOUNT 1
-#define DEFAULT_SUDOERS_ADD 1
-#define DEFAULT_SU_PATH "/system/bin/su"
-#define DEFAULT_MAGISKBOOT ""
-#define DEFAULT_DTC ""
-#endif
-EOF
+        # Generowanie preset.h bezpieczną metodą (bez heredoc)
+        if [ ! -f "preset.h" ]; then
+          echo "Generating preset.h..."
+          echo '#ifndef _PRESET_H' > preset.h
+          echo '#define _PRESET_H' >> preset.h
+          echo '#define DEFAULT_BANNER "Linux version"' >> preset.h
+          echo '#define DEFAULT_KALLSYMS "/proc/kallsyms"' >> preset.h
+          echo '#define DEFAULT_BOOT_IMG "boot.img"' >> preset.h
+          echo '#define DEFAULT_PATCH_IMG "patch.img"' >> preset.h
+          echo '#define DEFAULT_OUT_IMG "out.img"' >> preset.h
+          echo '#define DEFAULT_KPM_DIR "."' >> preset.h
+          echo '#define DEFAULT_KP_BASE 0' >> preset.h
+          echo '#define DEFAULT_SUPER_CALL 0' >> preset.h
+          echo '#define DEFAULT_SUPER_CMD 0' >> preset.h
+          echo '#define DEFAULT_INIT_RC_PATCH 1' >> preset.h
+          echo '#define DEFAULT_SELINUX_POLICY_PATCH 1' >> preset.h
+          echo '#define DEFAULT_OVERLAYFS_MOUNT 1' >> preset.h
+          echo '#define DEFAULT_SUDOERS_ADD 1' >> preset.h
+          echo '#define DEFAULT_SU_PATH "/system/bin/su"' >> preset.h
+          echo '#define DEFAULT_MAGISKBOOT ""' >> preset.h
+          echo '#define DEFAULT_DTC ""' >> preset.h
+          echo '#endif' >> preset.h
+          echo "preset.h generated."
+        else
+          echo "preset.h already exists."
+        fi
         
         echo "Building kpbuild tool..."
         cmake -S . -B build
         cmake --build build -j$(nproc)
         
+        # Weryfikacja czy narzędzie powstało
         if [ ! -f "build/kpbuild" ]; then
-            echo "Error: kpbuild not found!"
-            ls -R build/
-            exit 1
+          echo "Error: kpbuild not found after build!"
+          ls -R build/
+          exit 1
         fi
         
+        # Kopiowanie dla łatwiejszego wywołania w Makefile
         cp build/kpbuild ./kpbuild
         chmod +x ./kpbuild
-        echo "kpbuild ready."
+        echo "kpbuild ready at $(pwd)/kpbuild"
+      shell: bash
 
     - name: Build KPM Module
       working-directory: kpm_patch
