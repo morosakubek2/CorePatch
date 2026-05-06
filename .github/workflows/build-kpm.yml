@@ -29,101 +29,69 @@ jobs:
           wget \
           curl \
           make \
-          cmake \
-          libssl-dev \
-          zlib1g-dev \
-          python3
+          python3 \
+          jq
 
-    - name: Setup KernelPatch Sources & Build Tools
+    - name: Setup KernelPatch Sources & Download Pre-built Tools
       run: |
         cd kpm_patch
-        echo "Cloning KernelPatch sources..."
+        
+        echo "1. Cloning KernelPatch sources (for headers only)..."
         git clone --depth 1 https://github.com/bmax121/KernelPatch.git kernel_patch_src
         
-        cd kernel_patch_src/tools
+        echo "2. Downloading pre-built kpbuild tool from official Releases..."
+        mkdir -p kernel_patch_src/tools
         
-        echo "Generating comprehensive preset.h..."
-        # Tworzymy plik linia po linii, aby uniknąć problemów z heredoc w YAML
-        echo '#ifndef _PRESET_H' > preset.h
-        echo '#define _PRESET_H' >> preset.h
-        echo '' >> preset.h
-        echo '#include <stdint.h>' >> preset.h
-        echo '#include <stdbool.h>' >> preset.h
-        echo '' >> preset.h
-        echo '// Basic types required by tools' >> preset.h
-        echo 'typedef struct {' >> preset.h
-        echo '    const char *banner;' >> preset.h
-        echo '    const char *kallsyms;' >> preset.h
-        echo '    const char *boot_img;' >> preset.h
-        echo '    const char *patch_img;' >> preset.h
-        echo '    const char *out_img;' >> preset.h
-        echo '    const char *kpm_dir;' >> preset.h
-        echo '    uint64_t kp_base;' >> preset.h
-        echo '    uint64_t super_call;' >> preset.h
-        echo '    uint64_t super_cmd;' >> preset.h
-        echo '    int init_rc_patch;' >> preset.h
-        echo '    int selinux_policy_patch;' >> preset.h
-        echo '    int overlayfs_mount;' >> preset.h
-        echo '    int sudoers_add;' >> preset.h
-        echo '    const char *su_path;' >> preset.h
-        echo '    const char *magiskboot;' >> preset.h
-        echo '    const char *dtc;' >> preset.h
-        echo '} preset_t;' >> preset.h
-        echo '' >> preset.h
-        echo 'typedef enum {' >> preset.h
-        echo '    EXTRA_TYPE_NONE = 0,' >> preset.h
-        echo '    EXTRA_TYPE_KPM,' >> preset.h
-        echo '    EXTRA_TYPE_PATCH,' >> preset.h
-        echo '    EXTRA_TYPE_MAX' >> preset.h
-        echo '} extra_item_type;' >> preset.h
-        echo '' >> preset.h
-        echo 'typedef struct patch_extra_item {' >> preset.h
-        echo '    extra_item_type type;' >> preset.h
-        echo '    char *path;' >> preset.h
-        echo '    void *data;' >> preset.h
-        echo '    uint32_t size;' >> preset.h
-        echo '    uint32_t offset;' >> preset.h
-        echo '    uint32_t flags;' >> preset.h
-        echo '    struct patch_extra_item *next;' >> preset.h
-        echo '} patch_extra_item_t;' >> preset.h
-        echo '' >> preset.h
-        echo '// Default values' >> preset.h
-        echo '#define DEFAULT_BANNER "Linux version"' >> preset.h
-        echo '#define DEFAULT_KALLSYMS "/proc/kallsyms"' >> preset.h
-        echo '#define DEFAULT_BOOT_IMG "boot.img"' >> preset.h
-        echo '#define DEFAULT_PATCH_IMG "patch.img"' >> preset.h
-        echo '#define DEFAULT_OUT_IMG "out.img"' >> preset.h
-        echo '#define DEFAULT_KPM_DIR "."' >> preset.h
-        echo '#define DEFAULT_KP_BASE 0' >> preset.h
-        echo '#define DEFAULT_SUPER_CALL 0' >> preset.h
-        echo '#define DEFAULT_SUPER_CMD 0' >> preset.h
-        echo '#define DEFAULT_INIT_RC_PATCH 1' >> preset.h
-        echo '#define DEFAULT_SELINUX_POLICY_PATCH 1' >> preset.h
-        echo '#define DEFAULT_OVERLAYFS_MOUNT 1' >> preset.h
-        echo '#define DEFAULT_SUDOERS_ADD 1' >> preset.h
-        echo '#define DEFAULT_SU_PATH "/system/bin/su"' >> preset.h
-        echo '#define DEFAULT_MAGISKBOOT ""' >> preset.h
-        echo '#define DEFAULT_DTC ""' >> preset.h
-        echo '' >> preset.h
-        echo '#endif /* _PRESET_H */' >> preset.h
+        # Pobierz najnowsze wydanie KernelPatch
+        LATEST_RELEASE=$(curl -s https://api.github.com/repos/bmax121/KernelPatch/releases/latest | jq -r '.tag_name')
+        echo "Latest release: $LATEST_RELEASE"
         
-        echo "preset.h created successfully."
-        cat preset.h # Debug: wyświetl zawartość
+        # Pobierz asset tools-linux-x86_64 (lub podobny)
+        # Uwaga: nazwa assetu może się różnić, sprawdzamy dostępne
+        ASSET_URL=$(curl -s https://api.github.com/repos/bmax121/KernelPatch/releases/latest | \
+                    jq -r '.assets[] | select(.name | contains("linux") and contains("x86_64")) | .browser_download_url' | head -n 1)
+        
+        if [ -z "$ASSET_URL" ]; then
+            echo "Error: Could not find linux x86_64 tools asset in latest release."
+            # Fallback: spróbuj znaleźć jakikolwiek asset z tools
+            ASSET_URL=$(curl -s https://api.github.com/repos/bmax121/KernelPatch/releases/latest | \
+                        jq -r '.assets[] | select(.name | contains("tools")) | .browser_download_url' | head -n 1)
+        fi
 
-        echo "Building kpbuild tool with CMake..."
-        cmake -S . -B build
-        cmake --build build -j$(nproc)
-        
-        if [ ! -f "build/kpbuild" ]; then
-          echo "Error: kpbuild not found after build!"
-          ls -R build/ || true
-          exit 1
+        if [ -n "$ASSET_URL" ]; then
+            echo "Downloading from: $ASSET_URL"
+            wget -q "$ASSET_URL" -O /tmp/kp_tools.zip
+            
+            # Rozpakuj i znajdź kpbuild
+            unzip -q /tmp/kp_tools.zip -d /tmp/kp_extracted
+            
+            # Szukaj pliku kpbuild lub kptools
+            KPBUILD_PATH=$(find /tmp/kp_extracted -name "kpbuild" -type f | head -n 1)
+            
+            if [ -n "$KPBUILD_PATH" ]; then
+                cp "$KPBUILD_PATH" kernel_patch_src/tools/kpbuild
+                chmod +x kernel_patch_src/tools/kpbuild
+                echo "kpbuild successfully extracted and placed."
+                ls -lh kernel_patch_src/tools/kpbuild
+            else
+                echo "Warning: kpbuild not found in archive. Listing contents:"
+                ls -R /tmp/kp_extracted
+                # Jeśli nie ma gotowca, spróbujmy zbudować TYLKO kpbuild z minimalnym presetem
+                # To jest ostateczność, ale lepsza niż fail
+                echo "Falling back to minimal build attempt..."
+                cd kernel_patch_src/tools
+                # Tu można ewentualnie spróbować kompilacji, ale ryzyko błędu jest duże bez pełnego preset.h
+                # Na razie kończymy błędem jeśli nie ma binary
+                exit 1 
+            fi
+        else
+            echo "Error: No suitable tools asset found in KernelPatch releases."
+            exit 1
         fi
         
-        cp build/kpbuild ./kpbuild
-        chmod +x ./kpbuild
-        echo "kpbuild ready at $(pwd)/kpbuild"
-      shell: bash
+        # Upewnij się, że ścieżka jest dostępna
+        export PATH=$PATH:$(pwd)/kernel_patch_src/tools
+        echo "Tools ready."
 
     - name: Build KPM Module
       run: |
@@ -133,13 +101,21 @@ jobs:
         export KP_TOOLS=$(pwd)/kernel_patch_src/tools
         export PATH=$PATH:$KP_TOOLS
         
+        # Weryfikacja czy kpbuild działa
+        if ! command -v kpbuild &> /dev/null; then
+            echo "Error: kpbuild not found in PATH!"
+            ls -lh kernel_patch_src/tools/
+            exit 1
+        fi
+        
+        echo "Running make..."
         make ARCH=${{ matrix.arch }} KP_ROOT=$(pwd)/kernel_patch_src clean || true
         make ARCH=${{ matrix.arch }} KP_ROOT=$(pwd)/kernel_patch_src
         
         if [ ! -f "corepatch.kpm" ]; then
-          echo "Error: Build failed, corepatch.kpm not found!"
-          ls -lh
-          exit 1
+            echo "Error: Build failed, corepatch.kpm not found!"
+            ls -lh
+            exit 1
         fi
         
         echo "Build successful!"
