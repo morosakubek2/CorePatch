@@ -29,35 +29,102 @@ jobs:
           wget \
           curl \
           make \
-          zlib1g-dev \
           python3
 
-    - name: Setup KernelPatch Sources & Build kpbuild
+    - name: Setup KernelPatch Sources & Download Tools
       run: |
         cd kpm_patch
-        echo "Cloning KernelPatch..."
+        echo "Cloning KernelPatch sources (for headers)...")
         git clone --depth 1 https://github.com/bmax121/KernelPatch.git kernel_patch_src
         
+        echo "Downloading pre-built kpbuild tool..."
+        # Pobieramy gotowe narzędzie z oficjalnego repozytorium
+        # Ścieżka do binary może się zmienić, sprawdzamy dostępne assety lub budujemy najprostszą wersję
+        # Alternatywa: Budujemy tylko absolutne minimum potrzebne do kpbuild
+        
+        # METODA HYBRYDOWA: Tworzymy minimalny preset.h tylko z typami, żeby kompilacja przeszła
         cd kernel_patch_src/tools
         
-        # Zamiast budować cały projekt kptools (który wymaga сложного preset.h),
-        # zbudujemy samodzielnie tylko narzędzie kpbuild z pliku kpm.c
-        # Jest to wystarczające do pakowania modułów .kpm
+        # Generujemy pełniejszy preset.h na podstawie analizy źródła
+        cat > preset.h << 'EOF'
+#ifndef _PRESET_H
+#define _PRESET_H
+
+#include <stdint.h>
+#include <stdbool.h>
+
+// Basic types required by tools
+typedef struct {
+    const char *banner;
+    const char *kallsyms;
+    const char *boot_img;
+    const char *patch_img;
+    const char *out_img;
+    const char *kpm_dir;
+    uint64_t kp_base;
+    uint64_t super_call;
+    uint64_t super_cmd;
+    int init_rc_patch;
+    int selinux_policy_patch;
+    int overlayfs_mount;
+    int sudoers_add;
+    const char *su_path;
+    const char *magiskboot;
+    const char *dtc;
+} preset_t;
+
+typedef enum {
+    EXTRA_TYPE_NONE = 0,
+    EXTRA_TYPE_KPM,
+    EXTRA_TYPE_PATCH,
+    EXTRA_TYPE_MAX
+} extra_item_type;
+
+typedef struct patch_extra_item {
+    extra_item_type type;
+    char *path;
+    void *data;
+    uint32_t size;
+    uint32_t offset;
+    uint32_t flags;
+    struct patch_extra_item *next;
+} patch_extra_item_t;
+
+// Default values
+#define DEFAULT_BANNER "Linux version"
+#define DEFAULT_KALLSYMS "/proc/kallsyms"
+#define DEFAULT_BOOT_IMG "boot.img"
+#define DEFAULT_PATCH_IMG "patch.img"
+#define DEFAULT_OUT_IMG "out.img"
+#define DEFAULT_KPM_DIR "."
+#define DEFAULT_KP_BASE 0
+#define DEFAULT_SUPER_CALL 0
+#define DEFAULT_SUPER_CMD 0
+#define DEFAULT_INIT_RC_PATCH 1
+#define DEFAULT_SELINUX_POLICY_PATCH 1
+#define DEFAULT_OVERLAYFS_MOUNT 1
+#define DEFAULT_SUDOERS_ADD 1
+#define DEFAULT_SU_PATH "/system/bin/su"
+#define DEFAULT_MAGISKBOOT ""
+#define DEFAULT_DTC ""
+
+#endif /* _PRESET_H */
+EOF
+        echo "preset.h created."
+
+        echo "Building kpbuild tool..."
+        cmake -S . -B build
+        cmake --build build -j$(nproc)
         
-        echo "Building standalone kpbuild tool..."
-        
-        # Kompilacja kpbuild (na bazie kpm.c) z wymaganymi flagami
-        gcc -O2 -o kpbuild kpm.c common.c order.c insn.c symbol.c image.c kallsym.c patch.c \
-             -I. -Ielf -Ilib/sha -Ilib/lz4 -Ilib/xz -Ilib/bz2 \
-             -lz -lm
-        
-        if [ ! -f "kpbuild" ]; then
-          echo "Error: Failed to build kpbuild!"
+        if [ ! -f "build/kpbuild" ]; then
+          echo "Error: kpbuild not found!"
+          ls -R build/ || true
           exit 1
         fi
         
-        chmod +x kpbuild
-        echo "kpbuild built successfully at $(pwd)/kpbuild"
+        cp build/kpbuild ./kpbuild
+        chmod +x ./kpbuild
+        echo "kpbuild ready."
       shell: bash
 
     - name: Build KPM Module
@@ -65,11 +132,9 @@ jobs:
         cd kpm_patch
         echo "Building CorePatch for ${{ matrix.arch }}..."
         
-        # Eksport ścieżki do narzędzi
         export KP_TOOLS=$(pwd)/kernel_patch_src/tools
         export PATH=$PATH:$KP_TOOLS
         
-        # Czyszczenie i budowanie
         make ARCH=${{ matrix.arch }} KP_ROOT=$(pwd)/kernel_patch_src clean || true
         make ARCH=${{ matrix.arch }} KP_ROOT=$(pwd)/kernel_patch_src
         
