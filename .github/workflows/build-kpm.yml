@@ -39,8 +39,24 @@ jobs:
           bison \
           pahole \
           gcc-aarch64-linux-gnu \
-          binutils-aarch64-linux-gnu \
-          linux-libc-dev-arm64-cross
+          binutils-aarch64-linux-gnu
+
+    - name: Download KPM SDK (Official KernelPatch)
+      run: |
+        echo "Downloading official kpm.h from KernelPatch..."
+        mkdir -p kpm_patch/kpm_sdk/include
+        
+        # Pobieramy oficjalny nagłówek z repozytorium bmax121/KernelPatch
+        wget -q https://raw.githubusercontent.com/bmax121/KernelPatch/main/kpms/include/kpm.h \
+          -O kpm_patch/kpm_sdk/include/kpm.h
+        
+        if [ ! -f "kpm_patch/kpm_sdk/include/kpm.h" ]; then
+          echo "Error: Failed to download kpm.h!"
+          exit 1
+        fi
+        
+        echo "kpm.h downloaded successfully:"
+        head -n 20 kpm_patch/kpm_sdk/include/kpm.h
 
     - name: Prepare build environment
       run: |
@@ -56,23 +72,17 @@ jobs:
     - name: Build KPM module
       run: |
         cd kpm_patch
-        
-        # Ustaw ścieżkę do nagłówków kernela dla cross-compilation
-        export KARCH_INCLUDE_DIR=/usr/aarch64-linux-gnu/include
-        
         chmod +x build.sh
-        echo "Building for architecture: ${{ matrix.arch }}"
         
-        # Przekazujemy ścieżkę do nagłówków jako zmienną środowiskową lub przez CFLAGS
-        make ARCH=${{ matrix.arch }} \
-             CROSS_COMPILE=aarch64-linux-gnu- \
-             KARCH_INCLUDE=$KARCH_INCLUDE_DIR
+        echo "Building for architecture: ${{ matrix.arch }}"
+        ./build.sh -a ${{ matrix.arch }}
         
         if [ ! -f "build/corepatch.kpm" ]; then
           echo "Error: Build failed, corepatch.kpm not found!"
           ls -R build/ || true
           exit 1
         fi
+        
         echo "Build successful!"
         ls -lh build/
 
