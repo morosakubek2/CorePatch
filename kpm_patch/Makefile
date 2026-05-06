@@ -1,64 +1,48 @@
-#
-# KPM CorePatch - Makefile for building the kernel patch module
-#
-
 MODULE_NAME := corepatch
-KPM_SDK_PATH ?= $(PWD)/kpm_sdk
 SRC_DIR := src
 BUILD_DIR := build
-INCLUDE_DIR := include
 
-# Architecture detection
 ARCH ?= arm64
 
-# Cross compiler setup
 ifeq ($(ARCH),arm64)
     CROSS_COMPILE ?= aarch64-linux-gnu-
-    ARCH_DEF := -D__aarch64__ -DKPM_ARCH_ARM64
-    # Ścieżka do nagłówków kernela dla ARM64 (instalowana przez linux-libc-dev-arm64-cross)
-    KARCH_INCLUDE ?= /usr/aarch64-linux-gnu/include
+    CFLAGS_ARCH := -D__aarch64__
 else ifeq ($(ARCH),arm)
     CROSS_COMPILE ?= arm-linux-gnueabihf-
-    ARCH_DEF := -D__arm__ -DKPM_ARCH_ARM
-    KARCH_INCLUDE ?= /usr/arm-linux-gnueabihf/include
+    CFLAGS_ARCH := -D__arm__
 else ifeq ($(ARCH),x86_64)
     CROSS_COMPILE ?= x86_64-linux-gnu-
-    ARCH_DEF := -D__x86_64__ -DKPM_ARCH_X86_64
-    KARCH_INCLUDE ?= /usr/x86_64-linux-gnu/include
+    CFLAGS_ARCH := -D__x86_64__
 else
-    $(error Unsupported architecture: $(ARCH))
+    $(error Unsupported ARCH: $(ARCH))
 endif
 
 CC := $(CROSS_COMPILE)gcc
 LD := $(CROSS_COMPILE)ld
 
-# Compiler flags
-# Dodajemy -isystem dla nagłówków systemowych kernela, aby miały niższy priorytet niż lokalne
-CFLAGS := -Wall -Wextra -O2 -fno-pic -fno-pie -ffreestanding -nostdlib
-CFLAGS += -I$(KPM_SDK_PATH)/include
-CFLAGS += -I$(INCLUDE_DIR)
-CFLAGS += -isystem$(KARCH_INCLUDE)
-CFLAGS += $(ARCH_DEF)
+# Flags matching splfix-kpm style: freestanding, no PIC/PIE for kernel context
+CFLAGS := -Wall -Wextra -O2 -ffreestanding -nostdlib -fno-pic -fno-pie
+CFLAGS += $(CFLAGS_ARCH)
+CFLAGS += -I$(SRC_DIR)
 
-# Source files
 SRCS := $(wildcard $(SRC_DIR)/*.c)
 OBJS := $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(SRCS))
+TARGET := $(BUILD_DIR)/$(MODULE_NAME).kpm
 
-# Output
-OUTPUT := $(BUILD_DIR)/$(MODULE_NAME).kpm
+all: dirs $(TARGET)
 
-all: directories $(OUTPUT)
-
-directories:
+dirs:
 	mkdir -p $(BUILD_DIR)
 
-$(OUTPUT): $(OBJS)
+$(TARGET): $(OBJS)
 	$(LD) -r -o $@ $^
+	@echo "Built $@"
 
-$(BUILD_DIR)/%.o: $(SRC_DIR)/%.c | directories
+$(BUILD_DIR)/%.o: $(SRC_DIR)/%.c | dirs
 	$(CC) $(CFLAGS) -c $< -o $@
+	@echo "Compiled $<"
 
 clean:
 	rm -rf $(BUILD_DIR)
 
-.PHONY: all clean directories
+.PHONY: all clean dirs
