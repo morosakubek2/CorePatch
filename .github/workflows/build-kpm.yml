@@ -31,9 +31,10 @@ jobs:
           make \
           cmake \
           libssl-dev \
-          python3
+          python3 \
+          zlib1g-dev
 
-    - name: Setup KernelPatch Sources & Build Tools
+    - name: Setup KernelPatch & Build Tools
       run: |
         cd kpm_patch
         echo "Cloning KernelPatch..."
@@ -44,32 +45,28 @@ jobs:
         cmake -S . -B build
         cmake --build build -j$(nproc)
         
-        # Sprawdzenie czy narzędzie powstało
         if [ ! -f "build/kpbuild" ]; then
-            echo "Error: kpbuild not found after build!"
+            echo "Error: kpbuild compilation failed!"
             ls -R build/
             exit 1
         fi
         
-        # Utworzenie linku symbolicznego lub kopiowanie dla łatwiejszego wywołania
         cp build/kpbuild ./kpbuild
         chmod +x ./kpbuild
-        echo "kpbuild ready at $(pwd)/kpbuild"
+        echo "kpbuild ready."
 
     - name: Build KPM Module
       run: |
         cd kpm_patch
+        export KP_ROOT=$(pwd)/kernel_patch_src
+        export PATH=$PATH:$KP_ROOT/tools
+        
         echo "Building CorePatch for ${{ matrix.arch }}..."
-        
-        # Eksport ścieżki do narzędzi
-        export KP_TOOLS=$(pwd)/kernel_patch_src/tools
-        export PATH=$PATH:$KP_TOOLS
-        
-        make ARCH=${{ matrix.arch }} KP_ROOT=$(pwd)/kernel_patch_src clean
-        make ARCH=${{ matrix.arch }} KP_ROOT=$(pwd)/kernel_patch_src
+        make ARCH=${{ matrix.arch }} KP_ROOT=$KP_ROOT clean
+        make ARCH=${{ matrix.arch }} KP_ROOT=$KP_ROOT
         
         if [ ! -f "corepatch.kpm" ]; then
-            echo "Error: Build failed, corepatch.kpm not found!"
+            echo "Error: Build failed! corepatch.kpm not found."
             ls -lh
             exit 1
         fi
