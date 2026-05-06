@@ -12,18 +12,8 @@
  * License: GPL v2
  */
 
-#include <linux/kernel.h>
-#include <linux/module.h>
-#include <linux/init.h>
-#include <linux/kprobes.h>
-#include <linux/version.h>
-#include <linux/cred.h>
-#include <linux/fs.h>
-#include <linux/uaccess.h>
-#include <linux/slab.h>
-#include <linux/string.h>
-#include <android_config.h>
-#include <kpm.h>
+#include <kpm.h> 
+#include "kpm_corepatch.h"
 
 #define KPM_COREPATCH_VERSION "1.0.0"
 #define KPM_COREPATCH_NAME "CorePatch-KPM"
