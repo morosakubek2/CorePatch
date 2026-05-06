@@ -56,20 +56,22 @@ jobs:
           gcc-${{ matrix.cross_compile }} \
           binutils-${{ matrix.cross_compile }}
 
-    - name: Download KernelSU headers
+    - name: Setup build environment
       run: |
-        mkdir -p kpm_patch/ksu
-        cd kpm_patch/ksu
-        wget -q https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/ksu.h
-        wget -q https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/ksud.h
-        wget -q https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/sucompat.c
-        echo "KernelSU headers downloaded"
+        mkdir -p kpm_patch/build
+        echo "Build environment ready for Apatch KPM"
+        # Sprawdź czy plik źródłowy istnieje
+        if [ ! -f "kpm_patch/src/corepatch.c" ]; then
+          echo "Error: corepatch.c not found!"
+          exit 1
+        fi
+        echo "Source files verified"
 
     - name: Build KPM for ${{ matrix.arch }}
       run: |
         cd kpm_patch
         chmod +x build.sh
-        ./build.sh -a ${{ matrix.arch }} -k ksu
+        ./build.sh -a ${{ matrix.arch }}
         
     - name: Verify build output
       run: |
