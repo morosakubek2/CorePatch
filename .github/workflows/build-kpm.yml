@@ -2,33 +2,23 @@ name: Build KPM CorePatch
 
 on:
   push:
-    branches: [ main ]
-    paths:
-      - 'kpm_patch/**'
+    branches: [ "main" ]
   pull_request:
-    paths:
-      - 'kpm_patch/**'
+    branches: [ "main" ]
   workflow_dispatch:
 
 jobs:
   build-kpm:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       matrix:
-        arch: [arm64, arm, x86_64]
-        include:
-          - arch: arm64
-            cross_compile: aarch64-linux-gnu-
-          - arch: arm
-            cross_compile: arm-linux-gnueabi-
-          - arch: x86_64
-            cross_compile: x86_64-linux-gnu-
+        arch: [arm64] # Tylko arm64 - większość urządzeń Android
 
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Install dependencies
+    - name: Install build dependencies
       run: |
         sudo apt-get update
         sudo apt-get install -y \
@@ -47,74 +37,43 @@ jobs:
           llvm \
           flex \
           bison \
-          pahole
+          pahole \
+          gcc-aarch64-linux-gnu \
+          binutils-aarch64-linux-gnu
 
-    - name: Setup cross-compilation for ${{ matrix.arch }}
-      if: matrix.arch != 'x86_64'
-      run: |
-        sudo apt-get install -y \
-          gcc-${{ matrix.cross_compile }} \
-          binutils-${{ matrix.cross_compile }}
-
-    - name: Setup build environment
+    - name: Prepare build environment
       run: |
         mkdir -p kpm_patch/build
         echo "Build environment ready for Apatch KPM"
-        # Sprawdź czy plik źródłowy istnieje
+        
+        # Weryfikacja plików źródłowych
         if [ ! -f "kpm_patch/src/corepatch.c" ]; then
           echo "Error: corepatch.c not found!"
           exit 1
         fi
         echo "Source files verified"
 
-    - name: Build KPM for ${{ matrix.arch }}
+    - name: Build KPM module
       run: |
         cd kpm_patch
         chmod +x build.sh
+        
+        # Budowanie dla wybranej architektury
+        echo "Building for architecture: ${{ matrix.arch }}"
         ./build.sh -a ${{ matrix.arch }}
         
-    - name: Verify build output
-      run: |
-        cd kpm_patch
-        ls -lh build/
-        if [ -f "build/corepatch_${{ matrix.arch }}.kpm" ]; then
-          echo "✓ KPM module built successfully for ${{ matrix.arch }}"
-          file build/corepatch_${{ matrix.arch }}.kpm
-        else
-          echo "✗ KPM module not found for ${{ matrix.arch }}"
+        # Weryfikacja wyniku
+        if [ ! -f "build/corepatch.kpm" ]; then
+          echo "Error: Build failed, corepatch.kpm not found!"
           exit 1
         fi
+        echo "Build successful!"
+        ls -lh build/
 
-    - name: Upload KPM artifact
+    - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: corepatch-kpm-${{ matrix.arch }}
-        path: kpm_patch/build/corepatch_${{ matrix.arch }}.kpm
+        path: kpm_patch/build/corepatch.kpm
         retention-days: 30
-
-  release:
-    needs: build-kpm
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    
-    steps:
-    - name: Download all artifacts
-      uses: actions/download-artifact@v4
-      with:
-        pattern: corepatch-kpm-*
-        merge-multiple: true
-        path: ./release
-
-    - name: Create release archive
-      run: |
-        cd release
-        zip -r ../corepatch-kpm-all.zip *.kpm
-        echo "Created release archive"
-        ls -lh
-
-    - name: Upload release archive
-      uses: actions/upload-artifact@v4
-      with:
-        name: corepatch-kpm-all-architectures
-        path: corepatch-kpm-all.zip
-        retention-days: 30
+        if-no-files-found: error
