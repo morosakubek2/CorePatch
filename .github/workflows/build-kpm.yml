@@ -8,43 +8,42 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  build-kpm:
     runs-on: ubuntu-24.04
-    strategy:
-      matrix:
-        arch: [arm64]
 
     steps:
-    - name: Checkout
+    - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Install dependencies
+    - name: Install build dependencies
       run: |
         sudo apt-get update
         sudo apt-get install -y \
           build-essential \
           gcc-aarch64-linux-gnu \
-          binutils-aarch64-linux-gnu \
-          make
+          binutils-aarch64-linux-gnu
 
-    - name: Build KPM
+    - name: Build KPM module
       run: |
         cd kpm_patch
-        chmod +x build.sh || true # Optional if using make directly
+        chmod +x build.sh || true # Skrypt opcjonalny, budujemy przez make
         
-        echo "Building for ${{ matrix.arch }}"
-        make ARCH=${{ matrix.arch }}
+        echo "Building for architecture: arm64"
+        make ARCH=arm64
         
+        # Weryfikacja wyniku
         if [ ! -f "build/corepatch.kpm" ]; then
-          echo "Error: Build failed!"
+          echo "Error: Build failed, corepatch.kpm not found!"
           exit 1
         fi
         
+        echo "Build successful!"
         ls -lh build/
 
-    - name: Upload Artifact
+    - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: corepatch-${{ matrix.arch }}
+        name: corepatch-kpm-arm64
         path: kpm_patch/build/corepatch.kpm
-        retention-days: 14
+        retention-days: 30
+        if-no-files-found: error
