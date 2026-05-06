@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-24.04
     strategy:
       matrix:
-        arch: [arm64] # Tylko arm64 - większość urządzeń Android
+        arch: [arm64]
 
     steps:
     - name: Checkout repository
@@ -39,14 +39,14 @@ jobs:
           bison \
           pahole \
           gcc-aarch64-linux-gnu \
-          binutils-aarch64-linux-gnu
+          binutils-aarch64-linux-gnu \
+          linux-libc-dev-arm64-cross
 
     - name: Prepare build environment
       run: |
         mkdir -p kpm_patch/build
         echo "Build environment ready for Apatch KPM"
         
-        # Weryfikacja plików źródłowych
         if [ ! -f "kpm_patch/src/corepatch.c" ]; then
           echo "Error: corepatch.c not found!"
           exit 1
@@ -56,15 +56,21 @@ jobs:
     - name: Build KPM module
       run: |
         cd kpm_patch
+        
+        # Ustaw ścieżkę do nagłówków kernela dla cross-compilation
+        export KARCH_INCLUDE_DIR=/usr/aarch64-linux-gnu/include
+        
         chmod +x build.sh
-        
-        # Budowanie dla wybranej architektury
         echo "Building for architecture: ${{ matrix.arch }}"
-        ./build.sh -a ${{ matrix.arch }}
         
-        # Weryfikacja wyniku
+        # Przekazujemy ścieżkę do nagłówków jako zmienną środowiskową lub przez CFLAGS
+        make ARCH=${{ matrix.arch }} \
+             CROSS_COMPILE=aarch64-linux-gnu- \
+             KARCH_INCLUDE=$KARCH_INCLUDE_DIR
+        
         if [ ! -f "build/corepatch.kpm" ]; then
           echo "Error: Build failed, corepatch.kpm not found!"
+          ls -R build/ || true
           exit 1
         fi
         echo "Build successful!"
