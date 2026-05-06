@@ -26,72 +26,40 @@ jobs:
           gcc-aarch64-linux-gnu \
           binutils-aarch64-linux-gnu \
           git \
-          wget \
-          curl \
           make \
-          python3 \
-          jq
+          wget \
+          unzip
 
-    - name: Setup KernelPatch Sources & Download Pre-built Tools
+    - name: Setup KernelPatch Sources & Download Tools
       run: |
         cd kpm_patch
         
-        echo "1. Cloning KernelPatch sources (for headers only)..."
+        # 1. Pobranie źródeł KernelPatch (tylko dla nagłówków kernela)
+        echo "Cloning KernelPatch sources for headers..."
         git clone --depth 1 https://github.com/bmax121/KernelPatch.git kernel_patch_src
         
-        echo "2. Downloading pre-built kpbuild tool from official Releases..."
-        mkdir -p kernel_patch_src/tools
+        # 2. Pobranie gotowych narzędzi (Release assets)
+        echo "Downloading pre-built kptools-linux from latest release..."
+        LATEST_URL="https://github.com/bmax121/KernelPatch/releases/latest/download/kptools-linux"
         
-        # Pobierz najnowsze wydanie KernelPatch
-        LATEST_RELEASE=$(curl -s https://api.github.com/repos/bmax121/KernelPatch/releases/latest | jq -r '.tag_name')
-        echo "Latest release: $LATEST_RELEASE"
+        wget -q "$LATEST_URL" -O kernel_patch_src/tools/kptools
         
-        # Pobierz asset tools-linux-x86_64 (lub podobny)
-        # Uwaga: nazwa assetu może się różnić, sprawdzamy dostępne
-        ASSET_URL=$(curl -s https://api.github.com/repos/bmax121/KernelPatch/releases/latest | \
-                    jq -r '.assets[] | select(.name | contains("linux") and contains("x86_64")) | .browser_download_url' | head -n 1)
-        
-        if [ -z "$ASSET_URL" ]; then
-            echo "Error: Could not find linux x86_64 tools asset in latest release."
-            # Fallback: spróbuj znaleźć jakikolwiek asset z tools
-            ASSET_URL=$(curl -s https://api.github.com/repos/bmax121/KernelPatch/releases/latest | \
-                        jq -r '.assets[] | select(.name | contains("tools")) | .browser_download_url' | head -n 1)
-        fi
-
-        if [ -n "$ASSET_URL" ]; then
-            echo "Downloading from: $ASSET_URL"
-            wget -q "$ASSET_URL" -O /tmp/kp_tools.zip
-            
-            # Rozpakuj i znajdź kpbuild
-            unzip -q /tmp/kp_tools.zip -d /tmp/kp_extracted
-            
-            # Szukaj pliku kpbuild lub kptools
-            KPBUILD_PATH=$(find /tmp/kp_extracted -name "kpbuild" -type f | head -n 1)
-            
-            if [ -n "$KPBUILD_PATH" ]; then
-                cp "$KPBUILD_PATH" kernel_patch_src/tools/kpbuild
-                chmod +x kernel_patch_src/tools/kpbuild
-                echo "kpbuild successfully extracted and placed."
-                ls -lh kernel_patch_src/tools/kpbuild
-            else
-                echo "Warning: kpbuild not found in archive. Listing contents:"
-                ls -R /tmp/kp_extracted
-                # Jeśli nie ma gotowca, spróbujmy zbudować TYLKO kpbuild z minimalnym presetem
-                # To jest ostateczność, ale lepsza niż fail
-                echo "Falling back to minimal build attempt..."
-                cd kernel_patch_src/tools
-                # Tu można ewentualnie spróbować kompilacji, ale ryzyko błędu jest duże bez pełnego preset.h
-                # Na razie kończymy błędem jeśli nie ma binary
-                exit 1 
-            fi
-        else
-            echo "Error: No suitable tools asset found in KernelPatch releases."
-            exit 1
+        if [ ! -f "kernel_patch_src/tools/kptools" ]; then
+          echo "Error: Failed to download kptools!"
+          exit 1
         fi
         
-        # Upewnij się, że ścieżka jest dostępna
-        export PATH=$PATH:$(pwd)/kernel_patch_src/tools
+        chmod +x kernel_patch_src/tools/kptools
+        
+        # Sprawdzenie czy narzędzie działa
+        echo "Verifying kptools..."
+        ./kernel_patch_src/tools/kptools --help || true
+        
+        # Utworzenie linku symbolicznego kpbuild -> kptools (często wymagane przez Makefile)
+        ln -sf kptools kernel_patch_src/tools/kpbuild
+        
         echo "Tools ready."
+      shell: bash
 
     - name: Build KPM Module
       run: |
@@ -101,21 +69,17 @@ jobs:
         export KP_TOOLS=$(pwd)/kernel_patch_src/tools
         export PATH=$PATH:$KP_TOOLS
         
-        # Weryfikacja czy kpbuild działa
-        if ! command -v kpbuild &> /dev/null; then
-            echo "Error: kpbuild not found in PATH!"
-            ls -lh kernel_patch_src/tools/
-            exit 1
-        fi
-        
-        echo "Running make..."
+        # Czyszczenie
         make ARCH=${{ matrix.arch }} KP_ROOT=$(pwd)/kernel_patch_src clean || true
+        
+        # Budowanie modułu
+        # Uwaga: Makefile musi wywoływać kpbuild lub kptools z odpowiednimi parametrami
         make ARCH=${{ matrix.arch }} KP_ROOT=$(pwd)/kernel_patch_src
         
         if [ ! -f "corepatch.kpm" ]; then
-            echo "Error: Build failed, corepatch.kpm not found!"
-            ls -lh
-            exit 1
+          echo "Error: Build failed, corepatch.kpm not found!"
+          ls -lh
+          exit 1
         fi
         
         echo "Build successful!"
