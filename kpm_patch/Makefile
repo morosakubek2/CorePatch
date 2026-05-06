@@ -1,56 +1,61 @@
-MODULE_NAME := corepatch
+# Makefile for KPM CorePatch
+# Based on KernelPatch demo-syscallhook structure
+
+KPM_NAME := corepatch
 SRC_DIR := src
-BUILD_DIR := build
+OBJ_FILE := $(KPM_NAME).o
+KPM_FILE := $(KPM_NAME).kpm
 
-# Domyślna architektura
+# KernelPatch Source (will be downloaded by workflow)
+KP_ROOT ?= $(PWD)/kernel_patch_src
+KP_TOOLS := $(KP_ROOT)/tools
+
+# Architecture setup
 ARCH ?= arm64
-
-# Kompilator cross
-ifeq ($(ARCH),arm64)
-    CROSS_COMPILE ?= aarch64-linux-gnu-
-    ARCH_DEF := -D__aarch64__
-else ifeq ($(ARCH),arm)
-    CROSS_COMPILE ?= arm-linux-gnueabihf-
-    ARCH_DEF := -D__arm__
-else ifeq ($(ARCH),x86_64)
-    CROSS_COMPILE ?= x86_64-linux-gnu-
-    ARCH_DEF := -D__x86_64__
+ifeq ($(ARCH), arm64)
+    CROSS_COMPILE := aarch64-linux-gnu-
+    KP_ARCH := arm64
+else ifeq ($(ARCH), arm)
+    CROSS_COMPILE := arm-linux-gnueabihf-
+    KP_ARCH := arm
+else ifeq ($(ARCH), x86_64)
+    CROSS_COMPILE := x86_64-linux-gnu-
+    KP_ARCH := x86_64
 else
-    $(error Unsupported architecture: $(ARCH))
+    $(error Unsupported ARCH: $(ARCH))
 endif
 
 CC := $(CROSS_COMPILE)gcc
 LD := $(CROSS_COMPILE)ld
 
-# Flagi kompilacji zgodne z demo-syscallhook
-# Usunięto -ffreestanding i -nostdlib, aby允许kompilator widział definicje z linux/*.h
-# Kod będzie zawierał nierozwiązane symbole, które KPM resolver załaduje w runtime
-CFLAGS := -Wall -Wextra -O2 -fPIC -fno-strict-aliasing
-CFLAGS += $(ARCH_DEF)
-CFLAGS += -DMODULE -D__KERNEL__
-# Dodajemy ścieżki do nagłówków jądra, jeśli są dostępne w systemie cross-compile
-# W GitHub Actions często nie ma pełnych nagłówków, więc polegamy na tym, że 
-# struktury są standardowe, a KPM rozwiąże symbole.
-# Jeśli wystąpi błąd brakujących nagłówków, należy zainstalować linux-headers-arm64-cross
+# Compiler Flags (Standard Kernel Module Flags)
+CFLAGS := -Wall -Wextra -O2 -fno-pic -fno-pie -fno-strict-aliasing
+CFLAGS += -I$(KP_ROOT)/kernel/include
+CFLAGS += -I$(KP_ROOT)/kernel/arch/$(KP_ARCH)/include
+CFLAGS += -D__KERNEL__ -DMODULE -DKBUILD_MODNAME=\"$(KPM_NAME)\"
 
-SRCS := $(wildcard $(SRC_DIR)/*.c)
-OBJS := $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(SRCS))
-OUTPUT := $(BUILD_DIR)/$(MODULE_NAME).kpm
+# Disable warnings that are common in hook code
+CFLAGS += -Wno-unused-parameter -Wno-unused-variable
 
-all: directories $(OUTPUT)
+all: $(KPM_FILE)
 
-directories:
-	mkdir -p $(BUILD_DIR)
-
-$(OUTPUT): $(OBJS)
-	$(LD) -r -o $@ $^
-	@echo "Built $(OUTPUT) successfully for $(ARCH)"
-
-$(BUILD_DIR)/%.o: $(SRC_DIR)/%.c | directories
+# Step 1: Compile C source to Object file using Kernel headers
+$(OBJ_FILE): $(SRC_DIR)/corepatch.c
+	@echo "Compiling $(SRC_DIR)/corepatch.c..."
 	$(CC) $(CFLAGS) -c $< -o $@
-	@echo "Compiled $<"
+
+# Step 2: Package Object file into KPM using kpbuild
+$(KPM_FILE): $(OBJ_FILE)
+	@echo "Packaging $(OBJ_FILE) into $(KPM_FILE)..."
+	@if [ ! -f "$(KP_TOOLS)/kpbuild" ]; then \
+		echo "Error: kpbuild not found. Ensure KernelPatch sources are downloaded."; \
+		exit 1; \
+	fi
+	$(KP_TOOLS)/kpbuild $(OBJ_FILE) -o $(KPM_FILE)
+	@echo "Successfully built $(KPM_FILE)"
 
 clean:
-	rm -rf $(BUILD_DIR)
+	rm -f $(OBJ_FILE) $(KPM_FILE)
+	rm -rf $(KP_ROOT)
 
-.PHONY: all clean directories
+.PHONY: all clean
