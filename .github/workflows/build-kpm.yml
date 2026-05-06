@@ -8,88 +8,43 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-kpm:
+  build:
     runs-on: ubuntu-24.04
     strategy:
       matrix:
         arch: [arm64]
 
     steps:
-    - name: Checkout repository
+    - name: Checkout
       uses: actions/checkout@v4
 
-    - name: Install build dependencies
+    - name: Install dependencies
       run: |
         sudo apt-get update
         sudo apt-get install -y \
           build-essential \
-          libelf-dev \
-          libz-dev \
-          libssl-dev \
-          binutils \
-          gcc \
-          make \
-          git \
-          wget \
-          curl \
-          xz-utils \
-          clang \
-          llvm \
-          flex \
-          bison \
-          pahole \
           gcc-aarch64-linux-gnu \
-          binutils-aarch64-linux-gnu
+          binutils-aarch64-linux-gnu \
+          make
 
-    - name: Download KPM SDK (Official KernelPatch)
-      run: |
-        echo "Downloading official kpm.h from KernelPatch..."
-        mkdir -p kpm_patch/kpm_sdk/include
-        
-        # Pobieramy oficjalny nagłówek z repozytorium bmax121/KernelPatch
-        wget -q https://raw.githubusercontent.com/bmax121/KernelPatch/main/kpms/include/kpm.h \
-          -O kpm_patch/kpm_sdk/include/kpm.h
-        
-        if [ ! -f "kpm_patch/kpm_sdk/include/kpm.h" ]; then
-          echo "Error: Failed to download kpm.h!"
-          exit 1
-        fi
-        
-        echo "kpm.h downloaded successfully:"
-        head -n 20 kpm_patch/kpm_sdk/include/kpm.h
-
-    - name: Prepare build environment
-      run: |
-        mkdir -p kpm_patch/build
-        echo "Build environment ready for Apatch KPM"
-        
-        if [ ! -f "kpm_patch/src/corepatch.c" ]; then
-          echo "Error: corepatch.c not found!"
-          exit 1
-        fi
-        echo "Source files verified"
-
-    - name: Build KPM module
+    - name: Build KPM
       run: |
         cd kpm_patch
-        chmod +x build.sh
+        chmod +x build.sh || true # Optional if using make directly
         
-        echo "Building for architecture: ${{ matrix.arch }}"
-        ./build.sh -a ${{ matrix.arch }}
+        echo "Building for ${{ matrix.arch }}"
+        make ARCH=${{ matrix.arch }}
         
         if [ ! -f "build/corepatch.kpm" ]; then
-          echo "Error: Build failed, corepatch.kpm not found!"
-          ls -R build/ || true
+          echo "Error: Build failed!"
           exit 1
         fi
         
-        echo "Build successful!"
         ls -lh build/
 
-    - name: Upload artifact
+    - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: corepatch-kpm-${{ matrix.arch }}
+        name: corepatch-${{ matrix.arch }}
         path: kpm_patch/build/corepatch.kpm
-        retention-days: 30
-        if-no-files-found: error
+        retention-days: 14
