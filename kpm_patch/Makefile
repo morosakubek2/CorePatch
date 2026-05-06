@@ -60,57 +60,57 @@ all: directories $(OUTPUT)
 
 # Create output directories
 directories:
-	@mkdir -p $(OBJ_DIR)
+	mkdir -p $(OBJ_DIR)
 
 # Link final module
 $(OUTPUT): $(OBJS)
-	@echo "Linking $(OUTPUT)..."
+	echo "Linking $(OUTPUT)..."
 	$(LD) -r -o $@ $^
-	@echo "Built $(OUTPUT) successfully"
+	echo "Built $(OUTPUT) successfully"
 
 # Compile source files
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
-	@echo "Compiling $<..."
+	echo "Compiling $<..."
 	$(CC) $(CFLAGS) -c $< -o $@
 
 # Clean build artifacts
 clean:
-	@echo "Cleaning..."
+	echo "Cleaning..."
 	rm -rf $(OBJ_DIR) $(OUTPUT)
-	@echo "Clean complete"
+	echo "Clean complete"
 
 # Install to KernelSU modules directory (requires root)
 install: $(OUTPUT)
-	@echo "Installing $(OUTPUT) to /data/adb/modules/"
+	echo "Installing $(OUTPUT) to /data/adb/modules/"
 	su -c "cp $(OUTPUT) /data/adb/modules/"
-	@echo "Installation complete. Reboot to apply."
+	echo "Installation complete. Reboot to apply."
 
 # Uninstall
 uninstall:
-	@echo "Removing $(OUTPUT) from /data/adb/modules/"
+	echo "Removing $(OUTPUT) from /data/adb/modules/"
 	su -c "rm -f /data/adb/modules/$(OUTPUT)"
-	@echo "Uninstallation complete. Reboot to apply."
+	echo "Uninstallation complete. Reboot to apply."
 
 # Help
 help:
-	@echo "KPM CorePatch Build System"
-	@echo ""
-	@echo "Targets:"
-	@echo "  all       - Build the module (default)"
-	@echo "  clean     - Remove build artifacts"
-	@echo "  install   - Install to KernelSU modules directory"
-	@echo "  uninstall - Remove from KernelSU modules directory"
-	@echo "  help      - Show this help message"
-	@echo ""
-	@echo "Options:"
-	@echo "  ARCH=<arch>        - Target architecture (arm64, arm, x86_64, x86)"
-	@echo "  CROSS_COMPILE=<cc> - Cross-compiler prefix"
-	@echo "  DEBUG=1            - Enable debug build"
-	@echo "  KPM_SDK_PATH=<path>- Path to KPM SDK"
-	@echo ""
-	@echo "Examples:"
-	@echo "  make ARCH=arm64"
-	@echo "  make ARCH=arm64 CROSS_COMPILE=aarch64-linux-android-"
-	@echo "  make DEBUG=1"
+	echo "KPM CorePatch Build System"
+	echo ""
+	echo "Targets:"
+	echo "  all       - Build the module (default)"
+	echo "  clean     - Remove build artifacts"
+	echo "  install   - Install to KernelSU modules directory"
+	echo "  uninstall - Remove from KernelSU modules directory"
+	echo "  help      - Show this help message"
+	echo ""
+	echo "Options:"
+	echo "  ARCH=<arch>        - Target architecture (arm64, arm, x86_64, x86)"
+	echo "  CROSS_COMPILE=<cc> - Cross-compiler prefix"
+	echo "  DEBUG=1            - Enable debug build"
+	echo "  KPM_SDK_PATH=<path>- Path to KPM SDK"
+	echo ""
+	echo "Examples:"
+	echo "  make ARCH=arm64"
+	echo "  make ARCH=arm64 CROSS_COMPILE=aarch64-linux-android-"
+	echo "  make DEBUG=1"
 
 .PHONY: all clean install uninstall help directories
